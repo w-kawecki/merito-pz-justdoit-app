@@ -13,4 +13,5 @@ Aplikacja do zarządzania zadaniami w stylu „To-Do”. Umożliwia zalogowanym 
 - `/docs` - Dokumentacja techniczna i schematy
 - `/frontend` - Aplikacja warstwy dostępowej (React)
 
+## Schemat Architektury
 ![Schemat Architektury](./docs/schemat.png)
