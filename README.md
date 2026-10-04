@@ -12,3 +12,5 @@ Aplikacja do zarządzania zadaniami w stylu „To-Do”. Umożliwia zalogowanym 
 - `/config` - Pliki konfiguracyjne, Terraform
 - `/docs` - Dokumentacja techniczna i schematy
 - `/frontend` - Aplikacja warstwy dostępowej (React)
+
+![Schemat Architektury](./docs/schemat.png)
