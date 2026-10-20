@@ -6,10 +6,12 @@ Aplikacja do zarządzania zadaniami w stylu „To-Do”. Umożliwia zalogowanym 
 - Frontend - React
 - Backend - Node.js + Express
 - DB - PostgreSQL
+- IaC - Terraform
 
 ## Struktura repozytorium
 - `/backend` - Logika aplikacji oraz REST API (Node.js/Express)
-- `/config` - Pliki konfiguracyjne, Terraform
+- `/config` - Pliki konfiguracyjne
+- `|-/terraform` - Pliki IaC / Terraform
 - `/docs` - Dokumentacja techniczna i schematy
 - `/frontend` - Aplikacja warstwy dostępowej (React)
 

@@ -1,0 +1,161 @@
+terraform {
+  required_version = ">= 1.5.0"
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
+    }
+  }
+}
+
+provider "azurerm" {
+  features {}
+  subscription_id = var.subscription_id
+}
+
+# Resource Group
+resource "azurerm_resource_group" "rg" {
+  name     = "rg-${var.project_name}-prod"
+  location = var.location
+}
+
+# VNet
+resource "azurerm_virtual_network" "vnet" {
+  name                = "vnet-${var.project_name}"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  address_space       = var.vnet_cidr
+}
+
+# Subnet for Web
+resource "azurerm_subnet" "web" {
+  name                 = "snet-public-web"
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = var.subnet_web_cidr
+}
+
+# Subnet for App
+resource "azurerm_subnet" "app" {
+  name                 = "snet-private-app"
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = var.subnet_app_cidr
+}
+
+# Subnet for DB
+resource "azurerm_subnet" "db" {
+  name                 = "snet-private-db"
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = var.subnet_db_cidr
+}
+
+# NSG for Web
+resource "azurerm_network_security_group" "nsg_web" {
+  name                = "nsg-web"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+
+  security_rule {
+    name                       = "Allow-HTTP-HTTPS-Internet"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_ranges    = ["80", "443"]
+    source_address_prefix      = "Internet"
+    destination_address_prefix = "*"
+  }
+}
+
+# NSG for App
+resource "azurerm_network_security_group" "nsg_app" {
+  name                = "nsg-app"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  security_rule {
+    name                       = "Allow-App-From-Web-Only"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "8080"
+    source_address_prefix      = var.subnet_web_cidr[0]
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "Allow-ICMP-From-Web"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Icmp"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = var.subnet_web_cidr[0]
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "Deny-All-Other-Inbound"
+    priority                   = 4000
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+}
+
+# NSG for DB
+resource "azurerm_network_security_group" "nsg_db" {
+  name                = "nsg-db"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  security_rule {
+    name                       = "Allow-DB-From-App-Only"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_ranges    = ["5432", "3306"] # PostgreSQL (5432) + MySQL (3306)
+    source_address_prefix      = var.subnet_app_cidr[0]
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "Deny-Direct-From-Web-And-All"
+    priority                   = 4000
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+}
+
+# NSG mapping
+resource "azurerm_subnet_network_security_group_association" "web_assoc" {
+  subnet_id                 = azurerm_subnet.web.id
+  network_security_group_id = azurerm_network_security_group.nsg_web.id
+}
+
+resource "azurerm_subnet_network_security_group_association" "app_assoc" {
+  subnet_id                 = azurerm_subnet.app.id
+  network_security_group_id = azurerm_network_security_group.nsg_app.id
+}
+
+resource "azurerm_subnet_network_security_group_association" "db_assoc" {
+  subnet_id                 = azurerm_subnet.db.id
+  network_security_group_id = azurerm_network_security_group.nsg_db.id
+}
