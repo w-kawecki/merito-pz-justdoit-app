@@ -7,7 +7,7 @@ export default function App() {
       <header className="app-header">
         <div>
           <h1>Just do it!</h1>
-          <p>System zarządzania zadaniami (Architektura 3-Tier w chmurze Microsoft Azure)</p>
+          <p>Aplikacja do zarządzania zadaniami w stylu „To-Do”.</p>
         </div>
       </header>
       <main>
