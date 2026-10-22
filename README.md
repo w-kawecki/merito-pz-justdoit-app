@@ -3,17 +3,24 @@ Aplikacja do zarządzania zadaniami w stylu „To-Do”. Umożliwia zalogowanym 
 
 ## Wykorzystane technologie
 - Cloud - Microsoft Azure
-- Frontend - React
+- IaC - Terraform
+- Frontend - React + Vite
 - Backend - Node.js + Express
 - DB - PostgreSQL
-- IaC - Terraform
+- Konteneryzacja - Docker + Nginx
 
 ## Struktura repozytorium
 - `/backend` - Logika aplikacji oraz REST API (Node.js/Express)
 - `/config` - Pliki konfiguracyjne
-- `|-/terraform` - Pliki IaC / Terraform
+  - `/config/terraform` - Infrastruktura jako kod (Terraform)
 - `/docs` - Dokumentacja techniczna i schematy
-- `/frontend` - Aplikacja warstwy dostępowej (React)
+- `/frontend` - Aplikacja warstwy dostępowej (React + Vite)
 
 ## Schemat Architektury
 ![Schemat Architektury](./docs/schemat.png)
+
+## Uruchomienie lokalne (Frontend)
+Przejdź do katalogu warstwy webowej i skopiuj plik zmiennych środowiskowych:
+   ```bash
+   cd frontend
+   cp .env.example .env
