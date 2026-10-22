@@ -5,18 +5,18 @@
 body {
   margin: 0;
   font-family: Inter, system-ui, -apple-system, sans-serif;
-  background-color: #0f172a;
-  color: #f8fafc;
+  background-color: #1d2021;
+  color: #ebdbb2;
 }
 
 .app-container {
-  max-width: 1100px;
+  max-width: 1150px;
   margin: 0 auto;
   padding: 2rem;
 }
 
 .app-header {
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid #3c3836;
   padding-bottom: 1.25rem;
   margin-bottom: 1.5rem;
 }
@@ -24,12 +24,12 @@ body {
 .app-header h1 {
   margin: 0 0 0.4rem 0;
   font-size: 2rem;
-  color: #38bdf8;
+  color: #fabd2f;
 }
 
 .app-header p {
   margin: 0;
-  color: #94a3b8;
+  color: #a89984;
 }
 
 .toolbar {
@@ -47,36 +47,43 @@ body {
 }
 
 .filter-btn {
-  background: #1e293b;
-  color: #cbd5e1;
-  border: 1px solid #334155;
+  background: #282828;
+  color: #d5c4a1;
+  border: 1px solid #504945;
   padding: 0.5rem 1rem;
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.875rem;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.filter-btn:hover {
+  background: #3c3836;
+  border-color: #665c54;
 }
 
 .filter-btn.active {
-  background: #0284c7;
-  color: #ffffff;
-  border-color: #0284c7;
+  background: #fe8019;
+  color: #1d2021;
+  border-color: #fe8019;
+  font-weight: 600;
 }
 
 .api-badge {
   font-family: monospace;
   font-size: 0.85rem;
-  background: #1e293b;
-  color: #38bdf8;
+  background: #282828;
+  color: #8ec07c;
   padding: 0.45rem 0.75rem;
   border-radius: 6px;
-  border: 1px solid #334155;
+  border: 1px solid #504945;
 }
 
 .table-wrapper {
-  background: #1e293b;
+  background: #282828;
   border-radius: 8px;
-  border: 1px solid #334155;
-  overflow: hidden;
+  border: 1px solid #3c3836;
+  overflow-x: auto;
 }
 
 .task-table {
@@ -88,41 +95,67 @@ body {
 .task-table th,
 .task-table td {
   padding: 0.9rem 1rem;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid #3c3836;
+}
+
+.task-table tr:last-child td {
+  border-bottom: none;
+}
+
+.task-table tr:hover td {
+  background-color: #32302f;
 }
 
 .task-table th {
-  background: #0f172a;
-  color: #94a3b8;
+  background: #1d2021;
+  color: #a89984;
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.task-table td:nth-child(1),
+.task-table td:nth-child(3),
+.task-table td:nth-child(4),
+.task-table td:nth-child(5),
+.task-table td:nth-child(6) {
+  white-space: nowrap;
 }
 
 .task-title {
   font-weight: 500;
+  color: #fbf1c7;
 }
 
 .badge {
-  padding: 0.25rem 0.6rem;
+  display: inline-block;
+  white-space: nowrap;
+  padding: 0.25rem 0.65rem;
   border-radius: 4px;
   font-size: 0.75rem;
   font-weight: 600;
 }
 
 .priority-wysoki {
-  background: rgba(239, 68, 68, 0.2);
-  color: #fca5a5;
+  background: rgba(251, 73, 52, 0.18);
+  color: #fb4934;
+  border: 1px solid rgba(251, 73, 52, 0.35);
 }
 
 .priority-średni {
-  background: rgba(245, 158, 11, 0.2);
-  color: #fcd34d;
+  background: rgba(250, 189, 47, 0.18);
+  color: #fabd2f;
+  border: 1px solid rgba(250, 189, 47, 0.35);
 }
 
 .status-pill {
-  background: #334155;
-  padding: 0.25rem 0.6rem;
+  display: inline-block;
+  white-space: nowrap;
+  background: #3c3836;
+  color: #ebdbb2;
+  border: 1px solid #504945;
+  padding: 0.25rem 0.7rem;
   border-radius: 999px;
   font-size: 0.8rem;
 }
