@@ -17,3 +17,13 @@ output "subnet_db_id" {
   description = "ID podsieci Private DB"
   value       = azurerm_subnet.db.id
 }
+
+output "postgres_fqdn" {
+  description = "Prywatny adres FQDN serwera PostgreSQL"
+  value       = azurerm_postgresql_flexible_server.postgres.fqdn
+}
+
+output "postgres_database_name" {
+  description = "Nazwa utworzonej bazy danych"
+  value       = azurerm_postgresql_flexible_server_database.app_db.name
+}
