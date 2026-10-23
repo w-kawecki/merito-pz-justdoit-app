@@ -38,3 +38,15 @@ variable "subnet_db_cidr" {
   type        = list(string)
   default     = ["10.0.3.0/24"]
 }
+
+variable "db_admin_login" {
+  description = "Login administratora bazy PostgreSQL"
+  type        = string
+  default     = "justdoitadmin"
+}
+
+variable "db_admin_password" {
+  description = "Hasło administratora bazy PostgreSQL"
+  type        = string
+  sensitive   = true
+}
