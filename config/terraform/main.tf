@@ -196,7 +196,6 @@ resource "azurerm_postgresql_flexible_server" "postgres" {
   public_network_access_enabled = false
   administrator_login           = var.db_admin_login
   administrator_password        = var.db_admin_password
-  zone                          = "1"
   storage_mb                    = 32768
   sku_name                      = "B_Standard_B1ms"
 

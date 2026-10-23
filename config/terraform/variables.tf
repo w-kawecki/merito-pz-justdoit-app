@@ -12,7 +12,7 @@ variable "project_name" {
 variable "location" {
   description = "Region Azure"
   type        = string
-  default     = "swedencentral"
+  default     = "italynorth"
 }
 
 variable "vnet_cidr" {
