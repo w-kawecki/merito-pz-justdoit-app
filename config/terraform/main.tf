@@ -13,6 +13,8 @@ provider "azurerm" {
   subscription_id = var.subscription_id
 }
 
+data "azurerm_client_config" "current" {}
+
 resource "azurerm_resource_group" "rg" {
   name     = "rg-${var.project_name}-prod"
   location = var.location
@@ -37,6 +39,14 @@ resource "azurerm_subnet" "app" {
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = var.subnet_app_cidr
+
+  delegation {
+    name = "appservice-delegation"
+    service_delegation {
+      name    = "Microsoft.Web/serverFarms"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/action"]
+    }
+  }
 }
 
 resource "azurerm_subnet" "db" {
@@ -200,6 +210,10 @@ resource "azurerm_postgresql_flexible_server" "postgres" {
   sku_name                      = "B_Standard_B1ms"
 
   depends_on = [azurerm_private_dns_zone_virtual_network_link.postgres_link]
+
+  lifecycle {
+    ignore_changes = [zone]
+  }
 }
 
 resource "azurerm_postgresql_flexible_server_database" "app_db" {
@@ -207,4 +221,77 @@ resource "azurerm_postgresql_flexible_server_database" "app_db" {
   server_id = azurerm_postgresql_flexible_server.postgres.id
   collation = "en_US.utf8"
   charset   = "UTF8"
+}
+
+resource "azurerm_user_assigned_identity" "github_cd" {
+  name                = "id-${var.project_name}-github-cd"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+}
+
+resource "azurerm_role_assignment" "github_cd_contributor" {
+  scope                = azurerm_resource_group.rg.id
+  role_definition_name = "Contributor"
+  principal_id         = azurerm_user_assigned_identity.github_cd.principal_id
+}
+
+resource "azurerm_federated_identity_credential" "github_oidc" {
+  name                = "fic-github-main"
+  resource_group_name = azurerm_resource_group.rg.name
+  parent_id           = azurerm_user_assigned_identity.github_cd.id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = "https://token.actions.githubusercontent.com"
+  subject             = "repo:${var.github_repo}:ref:refs/heads/main"
+}
+
+resource "azurerm_storage_account" "web" {
+  name                     = "st${var.project_name}web96157"
+  resource_group_name      = azurerm_resource_group.rg.name
+  location                 = azurerm_resource_group.rg.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+}
+
+resource "azurerm_storage_account_static_website" "web" {
+  storage_account_id = azurerm_storage_account.web.id
+  index_document     = "index.html"
+  error_404_document = "index.html"
+}
+
+resource "azurerm_service_plan" "app_plan" {
+  name                = "asp-${var.project_name}-prod"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  os_type             = "Linux"
+  sku_name            = "B1"
+}
+
+resource "azurerm_linux_web_app" "backend" {
+  name                      = "app-${var.project_name}-api-96157"
+  resource_group_name       = azurerm_resource_group.rg.name
+  location                  = azurerm_resource_group.rg.location
+  service_plan_id           = azurerm_service_plan.app_plan.id
+  virtual_network_subnet_id = azurerm_subnet.app.id
+  https_only                = true
+
+  site_config {
+    always_on              = true
+    vnet_route_all_enabled = true
+    app_command_line       = "node src/server.js"
+
+    application_stack {
+      node_version = "22-lts"
+    }
+
+    cors {
+      allowed_origins = ["*"]
+    }
+  }
+
+  app_settings = {
+    PORT          = "8080"
+    WEBSITES_PORT = "8080"
+    DB_SSL        = "true"
+    DATABASE_URL  = "postgresql://${var.db_admin_login}:${urlencode(var.db_admin_password)}@${azurerm_postgresql_flexible_server.postgres.fqdn}:5432/${azurerm_postgresql_flexible_server_database.app_db.name}"
+  }
 }
