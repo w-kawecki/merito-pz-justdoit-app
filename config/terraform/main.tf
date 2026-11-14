@@ -156,6 +156,30 @@ resource "azurerm_network_security_group" "nsg_db" {
   }
 
   security_rule {
+    name                       = "Allow-DB-Internal-Subnet"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = var.subnet_db_cidr[0]
+    destination_address_prefix = var.subnet_db_cidr[0]
+  }
+
+  security_rule {
+    name                       = "Allow-Azure-LoadBalancer"
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "AzureLoadBalancer"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
     name                       = "Deny-Direct-From-Web-And-All"
     priority                   = 4000
     direction                  = "Inbound"
