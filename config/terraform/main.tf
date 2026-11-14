@@ -241,7 +241,7 @@ resource "azurerm_federated_identity_credential" "github_oidc" {
   parent_id           = azurerm_user_assigned_identity.github_cd.id
   audience            = ["api://AzureADTokenExchange"]
   issuer              = "https://token.actions.githubusercontent.com"
-  subject             = "repo:${var.github_repo}:ref:refs/heads/main"
+  subject             = "repo:w-kawecki@50554574/merito-pz-justdoit-app@1403317921:ref:refs/heads/main"
 }
 
 resource "azurerm_storage_account" "web" {
