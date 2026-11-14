@@ -50,3 +50,9 @@ variable "db_admin_password" {
   type        = string
   sensitive   = true
 }
+
+variable "github_repo" {
+  description = "Nazwa repozytorium GitHub (właściciel/repo)"
+  type        = string
+  default     = "w-kawecki/merito-pz-justdoit-app"
+}
