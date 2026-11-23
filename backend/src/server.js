@@ -8,8 +8,16 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 8080;
+const ALLOWED_ORIGIN = process.env.CORS_ORIGIN || '*';
 
-app.use(cors());
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  next();
+});
+app.use(cors({ origin: ALLOWED_ORIGIN }));
 app.use(express.json());
 
 app.get('/api/health', async (req, res) => {

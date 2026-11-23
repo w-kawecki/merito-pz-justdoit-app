@@ -97,3 +97,31 @@ npm install
 npm run dev
 ```
 Interfejs użytkownika dostępny jest pod adresem `http://localhost:5173`.
+## Bezpieczeństwo i Hardening Chmury (Reguły NSG)
+
+Architektura sieciowa została zabezpieczona zgodnie z zasadą najmniejszych uprawnień (**Least Privilege**) w oparciu o trzy grupy zabezpieczeń sieciowych (NSG) przypisane do osobnych podsieci VNet (`10.0.0.0/16`).
+
+| Warstwa / NSG | Podsieć (CIDR) | Kierunek | Priorytet | Nazwa reguły | Protokół / Porty | Źródło | Cel | Akcja |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Web (`nsg-web`)** | `snet-public-web` (`10.0.1.0/24`) | Inbound | `100` | `Allow-HTTP-HTTPS-Internet` | TCP `80, 443` | `Internet` | `*` | **Allow** |
+| **Web (`nsg-web`)** | `snet-public-web` (`10.0.1.0/24`) | Inbound | `200` | `Deny-Management-SSH-RDP` | TCP `22, 3389` | `*` | `*` | **Deny** |
+| **Web (`nsg-web`)** | `snet-public-web` (`10.0.1.0/24`) | Inbound | `4000` | `Deny-All-Other-Inbound` | `*` / `*` | `*` | `*` | **Deny** |
+| **Web (`nsg-web`)** | `snet-public-web` (`10.0.1.0/24`) | Outbound | `65000` | `AllowVnetOutBound` (domyślna Azure) | `*` / `*` | `VirtualNetwork` | `VirtualNetwork` | **Allow** |
+| **Web (`nsg-web`)** | `snet-public-web` (`10.0.1.0/24`) | Outbound | `65500` | `DenyAllOutBound` (domyślna Azure) | `*` / `*` | `*` | `*` | **Deny** |
+| **App (`nsg-app`)** | `snet-private-app` (`10.0.2.0/24`) | Inbound | `100` | `Allow-App-From-Web-Only` | TCP `8080` | `10.0.1.0/24` | `*` | **Allow** |
+| **App (`nsg-app`)** | `snet-private-app` (`10.0.2.0/24`) | Inbound | `200` | `Deny-Management-SSH-RDP` | TCP `22, 3389` | `*` | `*` | **Deny** |
+| **App (`nsg-app`)** | `snet-private-app` (`10.0.2.0/24`) | Inbound | `4000` | `Deny-All-Other-Inbound` | `*` / `*` | `*` | `*` | **Deny** |
+| **App (`nsg-app`)** | `snet-private-app` (`10.0.2.0/24`) | Outbound | `65000` | `AllowVnetOutBound` (domyślna Azure) | `*` / `*` | `VirtualNetwork` | `VirtualNetwork` | **Allow** |
+| **App (`nsg-app`)** | `snet-private-app` (`10.0.2.0/24`) | Outbound | `65500` | `DenyAllOutBound` (domyślna Azure) | `*` / `*` | `*` | `*` | **Deny** |
+| **Data (`nsg-db`)** | `snet-private-db` (`10.0.3.0/24`) | Inbound | `100` | `Allow-DB-From-App-Only` | TCP `5432` | `10.0.2.0/24` | `*` | **Allow** |
+| **Data (`nsg-db`)** | `snet-private-db` (`10.0.3.0/24`) | Inbound | `110` | `Allow-DB-Internal-Subnet` | `*` / `*` | `10.0.3.0/24` | `10.0.3.0/24` | **Allow** |
+| **Data (`nsg-db`)** | `snet-private-db` (`10.0.3.0/24`) | Inbound | `120` | `Allow-Azure-LoadBalancer` | `*` / `*` | `AzureLoadBalancer` | `*` | **Allow** |
+| **Data (`nsg-db`)** | `snet-private-db` (`10.0.3.0/24`) | Inbound | `200` | `Deny-Management-SSH-RDP` | TCP `22, 3389` | `*` | `*` | **Deny** |
+| **Data (`nsg-db`)** | `snet-private-db` (`10.0.3.0/24`) | Inbound | `4000` | `Deny-Direct-From-Web-And-All` | `*` / `*` | `*` | `*` | **Deny** |
+| **Data (`nsg-db`)** | `snet-private-db` (`10.0.3.0/24`) | Outbound | `65000` | `AllowVnetOutBound` (domyślna Azure) | `*` / `*` | `VirtualNetwork` | `VirtualNetwork` | **Allow** |
+| **Data (`nsg-db`)** | `snet-private-db` (`10.0.3.0/24`) | Outbound | `65500` | `DenyAllOutBound` (domyślna Azure) | `*` / `*` | `*` | `*` | **Deny** |
+
+### Dodatkowe mechanizmy Hardeningu PaaS i HTTP
+- **Izolacja bazy danych:** `public_network_access_enabled = false` na Azure PostgreSQL Flexible Server oraz połączenie z backendu szyfrowane SSL (`DB_SSL=true`).
+- **Szyfrowanie w locie (TLS 1.2+):** Wymuszone `https_only = true` i `minimum_tls_version = "1.2"` na obu usługach Azure App Service (automatyczne przekierowanie `HTTP 80 -> HTTPS 443` kodem `301 Moved Permanently`).
+- **Ograniczenie powierzchni ataku:** Wyłączony dostęp `FTPS` (`ftps_state = "Disabled"`), zablokowane porty zarządcze `22` i `3389`, wyłączony nagłówek `X-Powered-By`, restrykcyjna polityka `CORS` ograniczona wyłącznie do domeny HTTPS frontendu oraz nagłówki bezpieczeństwa `Strict-Transport-Security`, `X-Content-Type-Options: nosniff` i `X-Frame-Options: DENY`.
