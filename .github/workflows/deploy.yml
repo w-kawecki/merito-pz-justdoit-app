@@ -142,6 +142,6 @@ jobs:
           echo "Checking HTTPS Frontend:"
           curl -sI --fail --retry 10 --retry-delay 6 --retry-all-errors "https://${WEB_HOST}"
           echo "Checking HTTPS Backend API:"
-          curl -i --fail --retry 10 --retry-delay 6 --retry-all-errors "https://${API_HOST}/api/health"
+          curl -i --fail --retry 10 --retry-delay 6 --retry-all-errors "https://${API_HOST}/health"
           echo ""
           curl -i --fail --retry 5 --retry-delay 3 --retry-all-errors "https://${API_HOST}/api/tasks"
