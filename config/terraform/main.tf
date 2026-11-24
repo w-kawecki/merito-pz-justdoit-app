@@ -271,6 +271,22 @@ resource "azurerm_postgresql_flexible_server_database" "app_db" {
   charset   = "UTF8"
 }
 
+resource "azurerm_log_analytics_workspace" "logs" {
+  name                = "law-${var.project_name}-prod"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+}
+
+resource "azurerm_application_insights" "app_insights" {
+  name                = "appi-${var.project_name}-prod"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  workspace_id        = azurerm_log_analytics_workspace.logs.id
+  application_type    = "Node.JS"
+}
+
 resource "azurerm_user_assigned_identity" "github_cd" {
   name                = "id-${var.project_name}-github-cd"
   resource_group_name = azurerm_resource_group.rg.name
@@ -334,12 +350,14 @@ resource "azurerm_linux_web_app" "backend" {
   https_only                = true
 
   site_config {
-    always_on              = true
-    vnet_route_all_enabled = true
-    minimum_tls_version    = "1.2"
-    ftps_state             = "Disabled"
-    http2_enabled          = true
-    app_command_line       = "node src/server.js"
+    always_on                        = true
+    vnet_route_all_enabled           = true
+    minimum_tls_version              = "1.2"
+    ftps_state                       = "Disabled"
+    http2_enabled                    = true
+    health_check_path                = "/health"
+    health_check_eviction_time_in_min = 2
+    app_command_line                 = "node src/server.js"
 
     application_stack {
       node_version = "22-lts"
@@ -350,11 +368,52 @@ resource "azurerm_linux_web_app" "backend" {
     }
   }
 
+  logs {
+    detailed_error_messages = true
+    failed_request_tracing  = true
+    http_logs {
+      file_system {
+        retention_in_days = 7
+        retention_in_mb   = 35
+      }
+    }
+  }
+
   app_settings = {
-    PORT          = "8080"
-    WEBSITES_PORT = "8080"
-    DB_SSL        = "true"
-    CORS_ORIGIN   = "https://${azurerm_linux_web_app.frontend.default_hostname}"
-    DATABASE_URL  = "postgresql://${var.db_admin_login}:${urlencode(var.db_admin_password)}@${azurerm_postgresql_flexible_server.postgres.fqdn}:5432/${azurerm_postgresql_flexible_server_database.app_db.name}"
+    PORT                                       = "8080"
+    WEBSITES_PORT                              = "8080"
+    DB_SSL                                     = "true"
+    CORS_ORIGIN                                = "https://${azurerm_linux_web_app.frontend.default_hostname}"
+    DATABASE_URL                               = "postgresql://${var.db_admin_login}:${urlencode(var.db_admin_password)}@${azurerm_postgresql_flexible_server.postgres.fqdn}:5432/${azurerm_postgresql_flexible_server_database.app_db.name}"
+    APPLICATIONINSIGHTS_CONNECTION_STRING      = azurerm_application_insights.app_insights.connection_string
+    ApplicationInsightsAgent_EXTENSION_VERSION = "~3"
+  }
+}
+
+resource "azurerm_monitor_diagnostic_setting" "diag_backend" {
+  name                       = "diag-${var.project_name}-backend"
+  target_resource_id         = azurerm_linux_web_app.backend.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
+
+  enabled_log {
+    category = "AppServiceConsoleLogs"
+  }
+
+  enabled_log {
+    category = "AppServiceHTTPLogs"
+  }
+
+  enabled_log {
+    category = "AppServiceAppLogs"
+  }
+}
+
+resource "azurerm_monitor_diagnostic_setting" "diag_postgres" {
+  name                       = "diag-${var.project_name}-postgres"
+  target_resource_id         = azurerm_postgresql_flexible_server.postgres.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
+
+  enabled_log {
+    category = "PostgreSQLLogs"
   }
 }

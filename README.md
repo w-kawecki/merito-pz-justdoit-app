@@ -125,3 +125,38 @@ Architektura sieciowa została zabezpieczona zgodnie z zasadą najmniejszych upr
 - **Izolacja bazy danych:** `public_network_access_enabled = false` na Azure PostgreSQL Flexible Server oraz połączenie z backendu szyfrowane SSL (`DB_SSL=true`).
 - **Szyfrowanie w locie (TLS 1.2+):** Wymuszone `https_only = true` i `minimum_tls_version = "1.2"` na obu usługach Azure App Service (automatyczne przekierowanie `HTTP 80 -> HTTPS 443` kodem `301 Moved Permanently`).
 - **Ograniczenie powierzchni ataku:** Wyłączony dostęp `FTPS` (`ftps_state = "Disabled"`), zablokowane porty zarządcze `22` i `3389`, wyłączony nagłówek `X-Powered-By`, restrykcyjna polityka `CORS` ograniczona wyłącznie do domeny HTTPS frontendu oraz nagłówki bezpieczeństwa `Strict-Transport-Security`, `X-Content-Type-Options: nosniff` i `X-Frame-Options: DENY`.
+
+## Optymalizacja Kosztowa (FinOps) i Monitoring
+
+### 1. Kontrola kosztów i alerty budżetowe (FinOps)
+W celu ochrony budżetu subskrypcji studenckiej (*Azure for Students*) skonfigurowano miesięczny budżet kosztowy **`budget-justdoit-finops`** w usłudze **Azure Cost Management -> Budgets** z limitem bazowym **10.00 USD** (`Resets monthly`) oraz trzema progami alarmowymi (`Actual cost`) wysyłającymi powiadomienia e-mail:
+
+| Typ warunku | Próg alarmowy | Kwota | Poziom | Procedura reakcji zespołu |
+| :--- | :--- | :--- | :--- | :--- |
+| `Actual cost` | **50%** | `$5` | Informacyjny | Bieżący przegląd zużycia zasobów w Cost Analysis |
+| `Actual cost` | **80%** | `$8` | Krytyczny | Audyt aktywnych zasobów (App Service B1, PostgreSQL B1ms) i wyłączenie środowisk testowych |
+| `Actual cost` | **100%** | `$10` | Natychmiastowy | Natychmiastowe zatrzymanie lub usunięcie zasobów (`terraform destroy`) |
+
+Dodatkowo warstwa Web (`app-justdoit-web-96157`) i App (`app-justdoit-api-96157`) współdzielą jeden plan `asp-justdoit-prod` (SKU `B1`), a baza PostgreSQL działa na najmniejszym profilu `B_Standard_B1ms`.
+
+### 2. Endpoint `/health` i sonda Azure App Service Health Check
+Backend udostępnia publiczny endpoint diagnostyczny **`GET /health`** (oraz alias `/api/health`), który przy każdym wywołaniu testuje połączenie z prywatną bazą PostgreSQL (`SELECT 1`):
+- **HTTP `200 OK`** – aplikacja i baza danych działają poprawnie:
+
+~~~json
+{
+  "status": "UP",
+  "service": "justdoit-backend",
+  "timestamp": "2026-11-24T17:30:00.000Z",
+  "database": "CONNECTED"
+}
+~~~
+
+- **HTTP `500 Internal Server Error`** – brak łączności z bazą (`"status": "DOWN"`, `"database": "DISCONNECTED"`).
+
+W konfiguracji Terraform dla usługi `app-justdoit-api-96157` podpięto automatyczną sondę **App Service Health Check** (`health_check_path = "/health"`, `health_check_eviction_time_in_min = 2`), która cyklicznie monitoruje żywotność instancji.
+
+### 3. Centralne Logowanie (Cloud Logging) i Dashboard Monitoringu
+- **Log Analytics Workspace (`law-justdoit-prod`):** centralne zbieranie logów (retencja 30 dni) bez potrzeby łączenia się po SSH. Za pomocą `azurerm_monitor_diagnostic_setting` przekierowano strumienie `AppServiceConsoleLogs` (ustrukturyzowane logi JSON `stdout`/`stderr` z Expressa), `AppServiceHTTPLogs`, `AppServiceAppLogs` oraz logi bazy `PostgreSQLLogs`.
+- **Application Insights (`appi-justdoit-prod`):** automatyczna telemetria Node.js zbierająca liczbę żądań HTTP z podziałem na kody statusu (`2xx`, `4xx`, `5xx`), średnie opóźnienie API (*Response Time* w ms) oraz ewentualne wyjątki.
+- **Dashboard (`JustDoIt-Monitoring-Dashboard`):** widok w czasie rzeczywistym w Azure Portal agregujący 4 kluczowe metryki: **Liczba żądań HTTP (2xx / 4xx / 5xx)**, **Średni czas odpowiedzi API (ms)**, **Zużycie procesora CPU (%)** oraz **Zużycie pamięci RAM (%)**.
