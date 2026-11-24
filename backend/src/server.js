@@ -20,15 +20,50 @@ app.use((req, res, next) => {
 app.use(cors({ origin: ALLOWED_ORIGIN }));
 app.use(express.json());
 
-app.get('/api/health', async (req, res) => {
-  try {
-    await pool.query('SELECT 1');
-    res.status(200).json({ status: 'OK', service: 'justdoit-backend', database: 'connected' });
-  } catch (err) {
-    res.status(503).json({ status: 'DEGRADED', service: 'justdoit-backend', database: err.message });
-  }
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const durationMs = Date.now() - start;
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: res.statusCode >= 500 ? 'ERROR' : res.statusCode >= 400 ? 'WARN' : 'INFO',
+      method: req.method,
+      path: req.originalUrl,
+      status: res.statusCode,
+      latency_ms: durationMs
+    }));
+  });
+  next();
 });
 
+async function healthHandler(req, res) {
+  try {
+    await pool.query('SELECT 1');
+    res.status(200).json({
+      status: 'UP',
+      service: 'justdoit-backend',
+      timestamp: new Date().toISOString(),
+      database: 'CONNECTED'
+    });
+  } catch (err) {
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'ERROR',
+      event: 'healthcheck_failed',
+      error: err.message
+    }));
+    res.status(500).json({
+      status: 'DOWN',
+      service: 'justdoit-backend',
+      timestamp: new Date().toISOString(),
+      database: 'DISCONNECTED',
+      error: err.message
+    });
+  }
+}
+
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 app.use('/api/tasks', tasksRouter);
 
 app.use((req, res) => {
@@ -36,22 +71,46 @@ app.use((req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  console.error(err);
+  console.error(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    level: 'ERROR',
+    event: 'unhandled_error',
+    error: err.message
+  }));
   res.status(500).json({ error: 'Wewnętrzny błąd serwera (Internal Server Error)' });
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server listening on http://0.0.0.0:${PORT}`);
+  console.log(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    level: 'INFO',
+    event: 'server_started',
+    port: PORT
+  }));
   initDb()
     .then(() => {
-      console.log('Database initialized successfully');
+      console.log(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'INFO',
+        event: 'database_initialized'
+      }));
     })
     .catch((err) => {
-      console.error('Database initialization failed:', err.message);
+      console.error(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'ERROR',
+        event: 'database_init_failed',
+        error: err.message
+      }));
     });
 });
 
 server.on('error', (err) => {
-  console.error('Server failed to start:', err.message);
+  console.error(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    level: 'ERROR',
+    event: 'server_start_failed',
+    error: err.message
+  }));
   process.exit(1);
 });
