@@ -53,12 +53,22 @@ output "backend_url" {
   value       = "https://${azurerm_linux_web_app.backend.default_hostname}"
 }
 
-output "frontend_storage_account" {
-  description = "Nazwa konta Storage dla warstwy Web"
-  value       = azurerm_storage_account.web.name
+output "frontend_app_name" {
+  description = "Nazwa usługi Azure App Service dla frontendu"
+  value       = azurerm_linux_web_app.frontend.name
 }
 
 output "frontend_url" {
   description = "Publiczny adres URL warstwy Web (Frontend)"
-  value       = azurerm_storage_account.web.primary_web_endpoint
+  value       = "https://${azurerm_linux_web_app.frontend.default_hostname}"
+}
+
+output "log_analytics_workspace_name" {
+  description = "Nazwa obszaru roboczego Log Analytics dla centralnych logów"
+  value       = azurerm_log_analytics_workspace.logs.name
+}
+
+output "application_insights_name" {
+  description = "Nazwa zasobu Application Insights"
+  value       = azurerm_application_insights.app_insights.name
 }
