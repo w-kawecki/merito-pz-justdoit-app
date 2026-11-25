@@ -160,3 +160,41 @@ W konfiguracji Terraform dla usługi `app-justdoit-api-96157` podpięto automaty
 - **Log Analytics Workspace (`law-justdoit-prod`):** centralne zbieranie logów (retencja 30 dni) bez potrzeby łączenia się po SSH. Za pomocą `azurerm_monitor_diagnostic_setting` przekierowano strumienie `AppServiceConsoleLogs` (ustrukturyzowane logi JSON `stdout`/`stderr` z Expressa), `AppServiceHTTPLogs`, `AppServiceAppLogs` oraz logi bazy `PostgreSQLLogs`.
 - **Application Insights (`appi-justdoit-prod`):** automatyczna telemetria Node.js zbierająca liczbę żądań HTTP z podziałem na kody statusu (`2xx`, `4xx`, `5xx`), średnie opóźnienie API (*Response Time* w ms) oraz ewentualne wyjątki.
 - **Dashboard (`JustDoIt-Monitoring-Dashboard`):** widok w czasie rzeczywistym w Azure Portal agregujący 4 kluczowe metryki: **Liczba żądań HTTP (2xx / 4xx / 5xx)**, **Średni czas odpowiedzi API (ms)**, **Zużycie procesora CPU (%)** oraz **Zużycie pamięci RAM (%)**.
+
+## Testy Integracyjne API i Automatyczne Testy E2E
+
+Jakość aplikacji weryfikowana jest na dwóch najwyższych poziomach piramidy testów w wydzielonym katalogu `tests/`:
+
+| Poziom testów | Narzędzia | Plik źródłowy | Zakres weryfikacji |
+| :--- | :--- | :--- | :--- |
+| **Testy Integracyjne REST API** | Vitest + Supertest | `tests/api.test.js` | Statusy HTTP (`200`, `201`, `404`), nagłówki `application/json`, kontrakt JSON, zapis i usuwanie zadań w PostgreSQL (`/health`, `/api/tasks`) |
+| **Testy End-to-End (E2E UI)** | Playwright (Chromium Headless) | `tests/e2e.spec.js` | Załadowanie strony HTTPS, wypełnienie formularza i dodanie zadania, weryfikacja na liście UI oraz trwałość rekordu po przeładowaniu strony |
+
+### 1. Lokalne uruchomienie testów
+Wymagane jest środowisko Node.js 22+ oraz instalacja zależności w katalogu `tests/`:
+
+~~~bash
+cd tests
+npm install
+npx playwright install chromium
+~~~
+
+Uruchomienie testów przeciwko żywemu środowisku w chmurze Azure (lub lokalnemu):
+
+~~~bash
+# Testy integracyjne REST API (Supertest)
+LIVE_API_URL="https://<TWOJ_BACKEND>.azurewebsites.net" npm run test:api
+
+# Testy E2E UI w trybie Headless (Playwright)
+LIVE_APP_URL="https://<TWOJ_FRONTEND>.azurewebsites.net" \
+LIVE_API_URL="https://<TWOJ_BACKEND>.azurewebsites.net" \
+npm run test:e2e
+
+# Podgląd wygenerowanego raportu HTML Playwright
+npm run test:report
+~~~
+
+### 2. Automatyzacja w CI/CD (GitHub Actions) oraz interpretacja wyników
+W potoku `.github/workflows/deploy.yml` zdefiniowano zadanie **`e2e-tests`** (`needs: [live-healthcheck]`), które uruchamia się automatycznie po każdym wdrożeniu na gałąź `main` w trybie bezgłowym (**Headless**):
+- **Status zielony (`Passed`):** wszystkie asercje REST API (`api.test.js`) oraz ścieżki użytkownika UI (`e2e.spec.js`) zakończyły się sukcesem — wdrożona wersja produkcyjna poprawnie komunikuje się z prywatną bazą PostgreSQL.
+- **Status czerwony (`Failed`) i diagnostyka:** potok zatrzymuje się z błędem i sygnalizuje regresję. Dzięki konfiguracji Playwright (`screenshot: 'only-on-failure'`, `video: 'retain-on-failure'`, `trace: 'retain-on-failure'`) oraz krokowi `actions/upload-artifact@v4` (`if: always()`), w sekcji **Artifacts** przebiegu GitHub Actions zawsze dostępna jest paczka **`playwright-report`** zawierająca raport HTML, a w przypadku błędu również zrzut ekranu z momentu awarii, nagranie wideo i plik trace.
