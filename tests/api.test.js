@@ -82,4 +82,34 @@ describe('Integracja REST API - JustDoIt Backend', () => {
 
     expect(response.body).toHaveProperty('error');
   });
+
+  it('EDGE CASE: POST /api/tasks z pustym tytułem powinien zwrócić 400 Bad Request', async () => {
+    const response = await request(API_URL)
+      .post('/api/tasks')
+      .send({ title: '   ' })
+      .expect('Content-Type', /json/)
+      .expect(400);
+
+    expect(response.body).toHaveProperty('error');
+  });
+
+  it('EDGE CASE: POST /api/tasks ze skrajnie długim tytułem (>120 znaków) powinien zwrócić 400 Bad Request', async () => {
+    const response = await request(API_URL)
+      .post('/api/tasks')
+      .send({ title: 'A'.repeat(150) })
+      .expect('Content-Type', /json/)
+      .expect(400);
+
+    expect(response.body).toHaveProperty('error');
+  });
+
+  it('EDGE CASE: POST /api/tasks ze znacznikami HTML (<script>) powinien zwrócić 400 Bad Request', async () => {
+    const response = await request(API_URL)
+      .post('/api/tasks')
+      .send({ title: '<script>alert(1)</script>' })
+      .expect('Content-Type', /json/)
+      .expect(400);
+
+    expect(response.body).toHaveProperty('error');
+  });
 });
