@@ -62,7 +62,7 @@ jobs:
           zip -r ../backend.zip .
 
       - name: Azure Login via OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -90,7 +90,7 @@ jobs:
           node-version: '22'
 
       - name: Azure Login via OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -120,7 +120,7 @@ jobs:
     needs: [deploy-app, deploy-web]
     steps:
       - name: Azure Login via OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -166,7 +166,7 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Azure Login via OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
