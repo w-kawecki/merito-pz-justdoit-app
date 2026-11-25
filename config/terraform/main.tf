@@ -13,6 +13,8 @@ provider "azurerm" {
   subscription_id = var.subscription_id
 }
 
+data "azurerm_client_config" "current" {}
+
 resource "azurerm_resource_group" "rg" {
   name     = "rg-${var.project_name}-prod"
   location = var.location
@@ -37,6 +39,14 @@ resource "azurerm_subnet" "app" {
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = var.subnet_app_cidr
+
+  delegation {
+    name = "appservice-delegation"
+    service_delegation {
+      name    = "Microsoft.Web/serverFarms"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/action"]
+    }
+  }
 }
 
 resource "azurerm_subnet" "db" {
@@ -74,14 +84,26 @@ resource "azurerm_network_security_group" "nsg_web" {
   }
 
   security_rule {
-    name                       = "Allow-ICMP-Internet"
-    priority                   = 110
+    name                       = "Deny-Management-SSH-RDP"
+    priority                   = 200
     direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Icmp"
+    access                     = "Deny"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_ranges    = ["22", "3389"]
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "Deny-All-Other-Inbound"
+    priority                   = 4000
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "*"
     source_port_range          = "*"
     destination_port_range     = "*"
-    source_address_prefix      = "Internet"
+    source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
 }
@@ -104,14 +126,14 @@ resource "azurerm_network_security_group" "nsg_app" {
   }
 
   security_rule {
-    name                       = "Allow-ICMP-From-Web"
-    priority                   = 110
+    name                       = "Deny-Management-SSH-RDP"
+    priority                   = 200
     direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Icmp"
+    access                     = "Deny"
+    protocol                   = "Tcp"
     source_port_range          = "*"
-    destination_port_range     = "*"
-    source_address_prefix      = var.subnet_web_cidr[0]
+    destination_port_ranges    = ["22", "3389"]
+    source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
 
@@ -140,8 +162,44 @@ resource "azurerm_network_security_group" "nsg_db" {
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
-    destination_port_ranges    = ["5432", "3306"]
+    destination_port_range     = "5432"
     source_address_prefix      = var.subnet_app_cidr[0]
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "Allow-DB-Internal-Subnet"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = var.subnet_db_cidr[0]
+    destination_address_prefix = var.subnet_db_cidr[0]
+  }
+
+  security_rule {
+    name                       = "Allow-Azure-LoadBalancer"
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "AzureLoadBalancer"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "Deny-Management-SSH-RDP"
+    priority                   = 200
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_ranges    = ["22", "3389"]
+    source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
 
@@ -200,6 +258,10 @@ resource "azurerm_postgresql_flexible_server" "postgres" {
   sku_name                      = "B_Standard_B1ms"
 
   depends_on = [azurerm_private_dns_zone_virtual_network_link.postgres_link]
+
+  lifecycle {
+    ignore_changes = [zone]
+  }
 }
 
 resource "azurerm_postgresql_flexible_server_database" "app_db" {
@@ -207,4 +269,151 @@ resource "azurerm_postgresql_flexible_server_database" "app_db" {
   server_id = azurerm_postgresql_flexible_server.postgres.id
   collation = "en_US.utf8"
   charset   = "UTF8"
+}
+
+resource "azurerm_log_analytics_workspace" "logs" {
+  name                = "law-${var.project_name}-prod"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+}
+
+resource "azurerm_application_insights" "app_insights" {
+  name                = "appi-${var.project_name}-prod"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  workspace_id        = azurerm_log_analytics_workspace.logs.id
+  application_type    = "Node.JS"
+}
+
+resource "azurerm_user_assigned_identity" "github_cd" {
+  name                = "id-${var.project_name}-github-cd"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+}
+
+resource "azurerm_role_assignment" "github_cd_contributor" {
+  scope                = azurerm_resource_group.rg.id
+  role_definition_name = "Contributor"
+  principal_id         = azurerm_user_assigned_identity.github_cd.principal_id
+}
+
+resource "azurerm_federated_identity_credential" "github_oidc" {
+  name                = "fic-github-main"
+  resource_group_name = azurerm_resource_group.rg.name
+  parent_id           = azurerm_user_assigned_identity.github_cd.id
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = "https://token.actions.githubusercontent.com"
+  subject             = "repo:w-kawecki@50554574/merito-pz-justdoit-app@1403317921:ref:refs/heads/main"
+}
+
+resource "azurerm_service_plan" "app_plan" {
+  name                = "asp-${var.project_name}-prod"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  os_type             = "Linux"
+  sku_name            = "B1"
+}
+
+resource "azurerm_linux_web_app" "frontend" {
+  name                = "app-${var.project_name}-web-96157"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  service_plan_id     = azurerm_service_plan.app_plan.id
+  https_only          = true
+
+  site_config {
+    always_on           = true
+    minimum_tls_version = "1.2"
+    ftps_state          = "Disabled"
+    http2_enabled       = true
+    app_command_line    = "node server.mjs"
+
+    application_stack {
+      node_version = "22-lts"
+    }
+  }
+
+  app_settings = {
+    PORT          = "8080"
+    WEBSITES_PORT = "8080"
+  }
+}
+
+resource "azurerm_linux_web_app" "backend" {
+  name                      = "app-${var.project_name}-api-96157"
+  resource_group_name       = azurerm_resource_group.rg.name
+  location                  = azurerm_resource_group.rg.location
+  service_plan_id           = azurerm_service_plan.app_plan.id
+  virtual_network_subnet_id = azurerm_subnet.app.id
+  https_only                = true
+
+  site_config {
+    always_on                        = true
+    vnet_route_all_enabled           = true
+    minimum_tls_version              = "1.2"
+    ftps_state                       = "Disabled"
+    http2_enabled                    = true
+    health_check_path                = "/health"
+    health_check_eviction_time_in_min = 2
+    app_command_line                 = "node src/server.js"
+
+    application_stack {
+      node_version = "22-lts"
+    }
+
+    cors {
+      allowed_origins = ["https://${azurerm_linux_web_app.frontend.default_hostname}"]
+    }
+  }
+
+  logs {
+    detailed_error_messages = true
+    failed_request_tracing  = true
+    http_logs {
+      file_system {
+        retention_in_days = 7
+        retention_in_mb   = 35
+      }
+    }
+  }
+
+  app_settings = {
+    PORT                                       = "8080"
+    WEBSITES_PORT                              = "8080"
+    DB_SSL                                     = "true"
+    CORS_ORIGIN                                = "https://${azurerm_linux_web_app.frontend.default_hostname}"
+    DATABASE_URL                               = "postgresql://${var.db_admin_login}:${urlencode(var.db_admin_password)}@${azurerm_postgresql_flexible_server.postgres.fqdn}:5432/${azurerm_postgresql_flexible_server_database.app_db.name}"
+    APPLICATIONINSIGHTS_CONNECTION_STRING      = azurerm_application_insights.app_insights.connection_string
+    ApplicationInsightsAgent_EXTENSION_VERSION = "~3"
+  }
+}
+
+resource "azurerm_monitor_diagnostic_setting" "diag_backend" {
+  name                       = "diag-${var.project_name}-backend"
+  target_resource_id         = azurerm_linux_web_app.backend.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
+
+  enabled_log {
+    category = "AppServiceConsoleLogs"
+  }
+
+  enabled_log {
+    category = "AppServiceHTTPLogs"
+  }
+
+  enabled_log {
+    category = "AppServiceAppLogs"
+  }
+}
+
+resource "azurerm_monitor_diagnostic_setting" "diag_postgres" {
+  name                       = "diag-${var.project_name}-postgres"
+  target_resource_id         = azurerm_postgresql_flexible_server.postgres.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
+
+  enabled_log {
+    category = "PostgreSQLLogs"
+  }
 }

@@ -1,0 +1,199 @@
+name: CD - Automated Cloud Deployment
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-test:
+    name: CI Gate - Scan, Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret Scanning (TruffleHog)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified
+
+      - name: Security Scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build Frontend
+        run: cd frontend && npm ci && npm run build && node --check server.mjs
+
+      - name: Verify Backend
+        run: cd backend && npm ci && node --check src/server.js
+
+  deploy-app:
+    name: Deploy App (Azure App Service)
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Package Backend Application
+        run: |
+          cd backend
+          npm ci --omit=dev
+          zip -r ../backend.zip .
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Backend to Azure App Service
+        run: |
+          az webapp deploy \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AZURE_WEBAPP_NAME }}" \
+            --src-path backend.zip \
+            --type zip
+
+  deploy-web:
+    name: Deploy Web (Azure App Service HTTPS)
+    runs-on: ubuntu-latest
+    needs: [build-and-test, deploy-app]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and Deploy Frontend to Azure App Service
+        run: |
+          API_HOST=$(az webapp show \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AZURE_WEBAPP_NAME }}" \
+            --query defaultHostName -o tsv | tr -d '\r\n ')
+          export VITE_API_BASE_URL="https://${API_HOST}/api"
+          cd frontend
+          npm ci
+          npm run build
+          zip -r ../frontend.zip dist server.mjs
+          cd ..
+          az webapp deploy \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --name "app-justdoit-web-96157" \
+            --src-path frontend.zip \
+            --type zip
+
+  live-healthcheck:
+    name: Live Healthcheck & HTTPS Verification
+    runs-on: ubuntu-latest
+    needs: [deploy-app, deploy-web]
+    steps:
+      - name: Azure Login via OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify HTTP to HTTPS Redirect and Live Endpoints
+        run: |
+          WEB_HOST=$(az webapp show \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --name "app-justdoit-web-96157" \
+            --query defaultHostName -o tsv | tr -d '\r\n ')
+          API_HOST=$(az webapp show \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AZURE_WEBAPP_NAME }}" \
+            --query defaultHostName -o tsv | tr -d '\r\n ')
+          echo "Checking HTTP -> HTTPS redirect on Web:"
+          curl -sI "http://${WEB_HOST}" | grep -iE "HTTP/|location:"
+          curl -sI "http://${WEB_HOST}" | grep -qi "location: https://"
+          echo "Checking HTTPS Frontend:"
+          curl -sI --fail --retry 10 --retry-delay 6 --retry-all-errors "https://${WEB_HOST}"
+          echo "Checking HTTPS Backend API:"
+          curl -i --fail --retry 10 --retry-delay 6 --retry-all-errors "https://${API_HOST}/health"
+          echo ""
+          curl -i --fail --retry 5 --retry-delay 3 --retry-all-errors "https://${API_HOST}/api/tasks"
+
+  e2e-tests:
+    name: Post-Deploy Integration API & E2E Tests (Headless)
+    runs-on: ubuntu-latest
+    needs: [live-healthcheck]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Test Dependencies & Playwright Chromium
+        run: |
+          cd tests
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run API Integration Tests (Supertest) & E2E Tests (Playwright)
+        run: |
+          WEB_HOST=$(az webapp show \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --name "app-justdoit-web-96157" \
+            --query defaultHostName -o tsv | tr -d '\r\n ')
+          API_HOST=$(az webapp show \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AZURE_WEBAPP_NAME }}" \
+            --query defaultHostName -o tsv | tr -d '\r\n ')
+          export LIVE_APP_URL="https://${WEB_HOST}"
+          export LIVE_API_URL="https://${API_HOST}"
+          cd tests
+          npm run test:api
+          npm run test:e2e
+
+      - name: Upload Playwright Report & Failure Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            tests/playwright-report/
+            tests/test-results/
+          retention-days: 14

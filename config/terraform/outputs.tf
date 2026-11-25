@@ -27,3 +27,48 @@ output "postgres_database_name" {
   description = "Nazwa utworzonej bazy danych"
   value       = azurerm_postgresql_flexible_server_database.app_db.name
 }
+
+output "azure_client_id" {
+  description = "Client ID tożsamości OIDC dla GitHub Actions"
+  value       = azurerm_user_assigned_identity.github_cd.client_id
+}
+
+output "azure_tenant_id" {
+  description = "Tenant ID subskrypcji Azure"
+  value       = data.azurerm_client_config.current.tenant_id
+}
+
+output "azure_subscription_id" {
+  description = "Subscription ID subskrypcji Azure"
+  value       = data.azurerm_client_config.current.subscription_id
+}
+
+output "backend_app_name" {
+  description = "Nazwa usługi Azure App Service dla backendu"
+  value       = azurerm_linux_web_app.backend.name
+}
+
+output "backend_url" {
+  description = "Publiczny adres URL warstwy App (Backend API)"
+  value       = "https://${azurerm_linux_web_app.backend.default_hostname}"
+}
+
+output "frontend_app_name" {
+  description = "Nazwa usługi Azure App Service dla frontendu"
+  value       = azurerm_linux_web_app.frontend.name
+}
+
+output "frontend_url" {
+  description = "Publiczny adres URL warstwy Web (Frontend)"
+  value       = "https://${azurerm_linux_web_app.frontend.default_hostname}"
+}
+
+output "log_analytics_workspace_name" {
+  description = "Nazwa obszaru roboczego Log Analytics dla centralnych logów"
+  value       = azurerm_log_analytics_workspace.logs.name
+}
+
+output "application_insights_name" {
+  description = "Nazwa zasobu Application Insights"
+  value       = azurerm_application_insights.app_insights.name
+}

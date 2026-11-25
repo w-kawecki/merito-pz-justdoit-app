@@ -7,3 +7,7 @@
 **/.env
 **/.env.local
 **/.env.*.local
+# Blok 11 - Testy E2E i raporty Playwright
+tests/node_modules/
+tests/playwright-report/
+tests/test-results/

@@ -12,7 +12,7 @@ variable "project_name" {
 variable "location" {
   description = "Region Azure"
   type        = string
-  default     = "italynorth"
+  default     = "swedencentral"
 }
 
 variable "vnet_cidr" {
@@ -49,4 +49,10 @@ variable "db_admin_password" {
   description = "Hasło administratora bazy PostgreSQL"
   type        = string
   sensitive   = true
+}
+
+variable "github_repo" {
+  description = "Nazwa repozytorium GitHub (właściciel/repo)"
+  type        = string
+  default     = "w-kawecki/merito-pz-justdoit-app"
 }
