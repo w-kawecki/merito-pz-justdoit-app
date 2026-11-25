@@ -9,6 +9,8 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 8080;
 const ALLOWED_ORIGIN = process.env.CORS_ORIGIN || '*';
+const MAX_TITLE_LENGTH = 120;
+const UNSAFE_HTML_REGEX = /<[^>]*>|javascript:/i;
 
 app.disable('x-powered-by');
 app.use((req, res, next) => {
@@ -18,7 +20,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(cors({ origin: ALLOWED_ORIGIN }));
-app.use(express.json());
+app.use(express.json({ limit: '50kb' }));
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -35,6 +37,56 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+function validateTaskPayload(req, res, next) {
+  if (!['POST', 'PUT', 'PATCH'].includes(req.method)) {
+    return next();
+  }
+
+  const body = req.body || {};
+  const isCreate = req.method === 'POST';
+
+  if (isCreate || body.title !== undefined) {
+    if (typeof body.title !== 'string' || body.title.trim().length === 0) {
+      return res.status(400).json({
+        error: 'Tytuł zadania jest wymagany i nie może być pusty.'
+      });
+    }
+
+    const trimmedTitle = body.title.trim();
+    if (trimmedTitle.length > MAX_TITLE_LENGTH) {
+      return res.status(400).json({
+        error: `Tytuł zadania jest zbyt długi (maksymalnie ${MAX_TITLE_LENGTH} znaków).`
+      });
+    }
+
+    if (UNSAFE_HTML_REGEX.test(trimmedTitle)) {
+      return res.status(400).json({
+        error: 'Tytuł zadania zawiera niedozwolone znaki specjalne lub znaczniki HTML.'
+      });
+    }
+
+    req.body.title = trimmedTitle;
+  }
+
+  for (const field of ['category', 'priority', 'status', 'description']) {
+    if (typeof body[field] === 'string') {
+      if (body[field].trim().length > 250) {
+        return res.status(400).json({
+          error: `Pole "${field}" przekracza maksymalną długość (250 znaków).`
+        });
+      }
+      if (UNSAFE_HTML_REGEX.test(body[field])) {
+        return res.status(400).json({
+          error: `Pole "${field}" zawiera niedozwolone znaczniki HTML.`
+        });
+      }
+      req.body[field] = body[field].trim();
+    }
+  }
+
+  return next();
+}
 
 async function healthHandler(req, res) {
   try {
@@ -64,20 +116,42 @@ async function healthHandler(req, res) {
 
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
-app.use('/api/tasks', tasksRouter);
+app.use('/api/tasks', validateTaskPayload, tasksRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Nie znaleziono zasobu (Endpoint Not Found)' });
 });
 
 app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({
+      error: 'Nieprawidłowy format danych JSON w żądaniu.'
+    });
+  }
+
+  const dbErrorCodes = ['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', '57P01', '08006', '08001'];
+  if (err && dbErrorCodes.includes(err.code)) {
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'ERROR',
+      event: 'database_unavailable',
+      code: err.code,
+      error: err.message
+    }));
+    return res.status(503).json({
+      error: 'Usługa bazy danych jest chwilowo niedostępna. Spróbuj ponownie za chwilę.'
+    });
+  }
+
   console.error(JSON.stringify({
     timestamp: new Date().toISOString(),
     level: 'ERROR',
     event: 'unhandled_error',
     error: err.message
   }));
-  res.status(500).json({ error: 'Wewnętrzny błąd serwera (Internal Server Error)' });
+  return res.status(500).json({
+    error: 'Wewnętrzny błąd serwera (Internal Server Error). Spróbuj ponownie później.'
+  });
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {
